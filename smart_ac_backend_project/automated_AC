@@ -1,0 +1,598 @@
+import tkinter as tk
+from tkinter import ttk, messagebox
+import random
+import json
+import requests
+import os
+import subprocess
+
+def set_black_background(widget):
+    widget.configure(bg="black")
+    for child in widget.winfo_children():
+        try:
+            child.configure(bg="black", fg="white", insertbackground="white")
+        except:
+            pass
+        if isinstance(child, (tk.Frame, tk.Toplevel, tk.LabelFrame)):
+            set_black_background(child)
+def configure_dark_theme():
+    style = ttk.Style()
+    style.theme_use("default")
+    style.configure("TCombobox",
+                    fieldbackground="black",
+                    background="black",
+                    foreground="white",
+                    selectforeground="white",
+                    selectbackground="black")
+    style.configure("TButton",
+                    background="black",
+                    foreground="white")
+
+
+CANISTER_ID = "uxrrr-q7777-77774-qaaaq-cai"   # deployed ID
+IC_GATEWAY = "http://127.0.0.1:4943"  # local dfx replica
+
+
+class ACReflexAgent:
+    def __init__(self, user_data):
+        self.data = user_data
+        self.memory = []  # to store past experiences
+
+    def fetch_weather(self, city: str):
+        """Fetch current weather for a city using OpenWeatherMap. Expects OPENWEATHER_API_KEY in env."""
+        api_key = os.getenv("OPENWEATHER_API_KEY")
+        if not api_key or not city:
+            return None
+        try:
+            r = requests.get(
+                "https://api.openweathermap.org/data/2.5/weather",
+                params={"q": city, "appid": api_key, "units": "metric"},
+                timeout=5,
+            )
+            j = r.json()
+            if "main" not in j:
+                return None
+            return {
+                "outdoor_temp": float(j["main"].get("temp")),
+                "outdoor_humidity": float(j["main"].get("humidity")),
+                "conditions": j.get("weather", [{}])[0].get("description", "")
+            }
+        except Exception:
+            return None
+
+    def save_memory(self, new_entry):
+        try:
+            print("Saving to canister:", new_entry)
+            # Convert the entry to candid format for dfx
+            input_data = new_entry["input"]
+            output_data = new_entry["output"]
+            
+            # Ensure all numbers are properly formatted as floats
+            candid_entry = f'(record {{ input = record {{ room_temp = {float(input_data["room_temp"])}; humidity = {float(input_data["humidity"])}; num_people = {int(input_data["num_people"])}; movement = "{input_data["movement"]}"; timing = "{input_data["timing"]}" }}; output = record {{ Room_Temp = {float(output_data["Room_Temp"])}; Humidity = {float(output_data["Humidity"])}; Suggested_AC_Temp = {float(output_data["Suggested_AC_Temp"])}; Mode = "{output_data["Mode"]}"; Fan_Speed = "{output_data["Fan_Speed"]}"; Flap_Direction = "{output_data["Flap_Direction"]}"; Estimated_Units_per_day = {float(output_data["Estimated_Units_per_day"])} }} }})'
+            
+            # Use dfx to call the canister
+            result = subprocess.run([
+                "dfx", "canister", "call", CANISTER_ID, "saveMemory", candid_entry
+            ], capture_output=True, text=True, cwd="/home/divyansh/Desktop/smart_ac_backend_project")
+            
+            if result.returncode != 0:
+                print(f"Error saving to canister: {result.stderr}")
+            else:
+                print("Successfully saved to canister")
+
+        except Exception as e:
+            print("Error saving memory to Motoko canister:", e)
+
+
+    def load_memory(self):
+        try:
+            # Use dfx to query the canister
+            result = subprocess.run([
+                "dfx", "canister", "call", CANISTER_ID, "loadMemory"
+            ], capture_output=True, text=True, cwd="/home/divyansh/Desktop/smart_ac_backend_project")
+            
+            if result.returncode != 0:
+                print(f"Error loading from canister: {result.stderr}")
+                return []
+            
+            # Parse the result - for now return empty list if no entries
+            output = result.stdout.strip()
+            print(f"Raw canister output: {output}")
+            
+            if output == "(vec {})" or "vec {}" in output:
+                return []
+            
+            # TODO: Parse the candid format output properly
+            # For now, return empty list - this would need proper candid parsing
+            return []
+            
+        except Exception as e:
+            print("Error loading memory from Motoko canister:", e)
+            return []
+
+
+    def decide(self):
+        # default simulated indoor readings
+        room_temp = round(random.uniform(22, 45), 1)
+        humidity = round(random.uniform(30, 70), 1)
+
+        # if city provided, use real outdoor weather as room baseline
+        city = self.data.get("city")
+        weather = self.fetch_weather(city) if city else None
+        if weather and isinstance(weather.get("outdoor_temp"), float):
+            room_temp = round(weather["outdoor_temp"], 1)
+            # also prefer outdoor humidity when available
+            if isinstance(weather.get("outdoor_humidity"), float):
+                humidity = round(weather["outdoor_humidity"], 1)
+
+        # for motoko canister
+        current_input = {
+            'room_temp': room_temp,
+            'humidity': humidity,
+            'num_people': int(self.data['num_people']),
+            'movement': self.data['movement'],
+            'timing': self.data['timing']
+        }
+
+        similar = self.find_similar(current_input)
+        if similar:
+            print("Using past experience")
+            out = similar['output']
+            # Return in UI-friendly keys + include weather context if available
+            return {
+                "Room Temp": float(out["Room_Temp"]),
+                "Humidity": float(out["Humidity"]),
+                "Suggested AC Temp": float(out["Suggested_AC_Temp"]),
+                "Mode": out["Mode"],
+                "Fan Speed": out["Fan_Speed"],
+                "Flap Direction": out["Flap_Direction"],
+                "Estimated Units/day": float(out["Estimated_Units_per_day"]),
+                "Outdoor Temp": weather.get("outdoor_temp") if weather else None,
+                "Outdoor Humidity": weather.get("outdoor_humidity") if weather else None,
+                "Weather Conditions": weather.get("conditions") if weather else None,
+            }
+
+        # AC temp decision
+        if room_temp >= 38:
+            ac_temp = 18
+        elif room_temp >= 32:
+            ac_temp = 20
+        elif room_temp >= 28:
+            ac_temp = 22
+        else:
+            ac_temp = 24
+
+        # Humidity check
+        if humidity > 60:
+            mode = "Dry Mode"
+        else:
+            mode = "Cool Mode"
+
+        # Eco Mode if zero people
+        if int(self.data['num_people']) == 0:
+            mode = "Eco Mode"
+            fan_speed = "Low"
+
+        # Sleep Mode logic
+        if self.data['movement'] == "No":
+            hour = int(self.data['timing'].split(":")[0])
+            if (hour >= 21 or hour < 6):
+                mode = "Sleep Mode"
+                ac_temp += 2
+
+        # Fan speed
+        num_people = int(self.data['num_people'])
+        if num_people >= 4 or room_temp > 35:
+            fan_speed = "High"
+        elif num_people >= 2:
+            fan_speed = "Medium"
+        else:
+            fan_speed = "Low"
+
+        # get positions
+        positions = [p.strip() for p in self.data['position'].split(',')]
+
+        # flap direction
+        if len(positions) > 1:
+            flap_direction = "Rotate"
+        else:
+            pos = positions[0]
+            hour = int(pos.replace('o', ''))
+
+            if hour == 12:
+                flap_direction = "Middle"
+            elif 10 <= hour <= 11:
+                flap_direction = "Left"
+            elif 1 <= hour <= 2:
+                flap_direction = "Right"
+            else:
+                # for other angles
+                flap_direction = "Middle"
+
+        # combo(AC type & Compressor type) power consumption
+        combo_base_units = {
+            ("Split AC", "Inverter Rotary Compressor"): 10,
+            ("Cassette AC", "Inverter Rotary Compressor"): 11,
+            ("Split AC", "Scroll Compressor"): 11,
+            ("Cassette AC", "Scroll Compressor"): 12,
+            ("Window AC", "Scroll Compressor"): 13,
+            ("Window AC", "Reciprocating Compressor"): 14,
+            ("Portable AC", "Fixed Speed Rotary Compressor"): 15
+        }
+
+        combo_key = (self.data['ac_type'], self.data['compressor_options'])
+        base_combo_units = combo_base_units.get(combo_key, 12)  # fallback if combo missing, 12kwh as reasonable average
+
+        # inputs
+        tonnage = float(self.data['tonnage'])
+        iseer = float(self.data['iseer'])
+        external_heat = float(self.data['external_heat'])
+        room_area = float(self.data['room_size'])
+        affordable_units = float(self.data['affordable_units'])
+
+        # calculation of cooling load
+        area_cooling_kw = room_area * 0.04  # simple estimate: 0.04 kW per sq ft
+
+        cooling_load_kw = tonnage * 3.5 + external_heat / 1000 + area_cooling_kw
+        hourly_consumption = cooling_load_kw / iseer
+        estimated_units = hourly_consumption * 8  # assume 8 hr/day
+
+        # Add combo in cooling load unit
+        total_daily_units = estimated_units + base_combo_units
+        total_hourly_consumption = total_daily_units / 8
+
+        print(f"Standard daily estimate: {estimated_units:.2f} kWh")
+        print(f"Combo base addition: {base_combo_units} kWh")
+        print(f"Final total daily units: {total_daily_units:.2f} kWh")
+        print(f"Final hourly consumption: {total_hourly_consumption:.2f} kWh")
+
+        # adjustment if over budget
+        adjustments = 0
+        while estimated_units > affordable_units and adjustments < 2:
+            ac_temp += 1  # raise temp to reduce load
+            mode = "Eco Mode"
+            fan_speed = "Low"
+            # reduce tonnage effect to simulate less cooling demand
+            cooling_load_kw = tonnage * 3.2 + external_heat / 1000 + area_cooling_kw
+            hourly_consumption = cooling_load_kw / iseer
+            estimated_units = hourly_consumption * 8
+            adjustments += 1
+
+        if estimated_units > float(self.data['affordable_units']):
+            ac_temp += 1
+            mode = "Eco Mode"
+            fan_speed = "Low"
+
+        # for motoko canister
+        entry = {
+            "input": current_input,
+            "output": {
+                "Room_Temp": room_temp,
+                "Humidity": humidity,
+                "Suggested_AC_Temp": round(ac_temp, 1),
+                "Mode": mode,
+                "Fan_Speed": fan_speed,
+                "Flap_Direction": flap_direction,
+                "Estimated_Units_per_day": round(total_daily_units, 2)
+            }
+        }
+
+        # persist to canister
+        self.save_memory(entry)
+
+        return {
+            "Room Temp": room_temp,
+            "Humidity": humidity,
+            "Suggested AC Temp": round(ac_temp, 1),
+            "Mode": mode,
+            "Fan Speed": fan_speed,
+            "Flap Direction": flap_direction,
+            "Estimated Units/day": round(total_daily_units, 2),
+            "Outdoor Temp": weather.get("outdoor_temp") if weather else None,
+            "Outdoor Humidity": weather.get("outdoor_humidity") if weather else None,
+            "Weather Conditions": weather.get("conditions") if weather else None,
+        }
+    
+    def find_similar(self, current_input):
+        """Search saved memory for a similar past input (local search)."""
+        try:
+            memory = self.load_memory()
+        except Exception:
+            memory = []
+        for entry in memory:
+            past_input = entry.get('input', {})
+            try:
+                if (
+                    abs(float(past_input['room_temp']) - float(current_input['room_temp'])) <= 1.0
+                    and abs(float(past_input['humidity']) - float(current_input['humidity'])) <= 5.0
+                    and int(past_input['num_people']) == int(current_input['num_people'])
+                    and str(past_input['movement']) == str(current_input['movement'])
+                    and str(past_input['timing']).split(":")[0] == str(current_input['timing']).split(":")[0]
+                ):
+                    return entry
+            except Exception:
+                continue
+        return None
+
+    # ------------for Goal based---------------
+    def plan_to_goal(self, current_input):
+        """
+        Simple Goal-based plan.
+        Goal: Keep temp comfy & efficient.
+        """
+        room_temp = current_input['room_temp']
+        humidity = current_input['humidity']
+
+        # Goal to keep AC temp between 22–26
+        if room_temp > 30:
+            ac_temp = 22
+        else:
+            ac_temp = 24
+
+        if humidity > 60:
+            mode = "Dry Mode"
+        else:
+            mode = "Cool Mode"
+
+        plan = {
+            "Room Temp": room_temp,
+            "Humidity": humidity,
+            "Planned AC Temp": ac_temp,
+            "Mode": mode,
+            "Goal": "Keep comfort and efficiency"
+        }
+
+        return plan
+
+# memory review for Goal based (kept in class method above)
+    
+class SmartACInputTab:
+    def __init__(self, master):
+        self.master = master
+        master.title("Smart AC")
+
+        # AC type Radiobuttons
+        tk.Label(master, text="Type of AC:").grid(row=0, column=0, sticky="w")
+        self.ac_type_var = tk.StringVar(value="0")  
+        ac_types = ["Window AC", "Split AC", "Cassette AC", "Portable AC"]
+        for idx, ac_type in enumerate(ac_types):
+            tk.Radiobutton(master, text=ac_type, variable=self.ac_type_var, value=ac_type).grid(row=0, column=idx+1)
+
+        # Tonnage Combobox
+        tk.Label(master, text="AC Tonnage:").grid(row=1, column=0, sticky="w")
+        self.tonnage_var = tk.StringVar()
+        tonnage_options = ["0.8", "1.0", "1.4", "1.5", "1.6", "1.7", "1.8",
+                           "2.0", "2.1", "2.2", "2.5", "3.0", "3.2", "3.4", "3.5", "4.0"]
+        self.tonnage_cb = ttk.Combobox(master, textvariable=self.tonnage_var, values=tonnage_options, state="readonly", width=25)
+        self.tonnage_cb.grid(row=1, column=1, padx=10)
+
+        # ISEER Rating entry
+        tk.Label(master, text="ISEER Rating (e.g., 3.9):").grid(row=2, column=0, sticky="w")
+        self.iseer_entry = tk.Entry(master, width=28)
+        self.iseer_entry.grid(row=2, column=1)
+
+        # cooling capacity entry
+        tk.Label(master, text="Cooling Capacity (100%):").grid(row=3, column=0, sticky="w")
+        self.cooling_entry = tk.Entry(master, width=28)
+        self.cooling_entry.grid(row=3, column=1)
+
+        # last service Radiobuttons
+        tk.Label(master, text="Last Service:").grid(row=4, column=0, sticky="w")
+        self.service_var = tk.StringVar(value="0") 
+        service_options = ["6 months", "12 months", "More"]
+        for idx, option in enumerate(service_options):
+            tk.Radiobutton(master, text=option, variable=self.service_var, value=option).grid(row=4, column=idx+1)
+
+        # Compressor type Combobox
+        tk.Label(master, text="Compressor Type:").grid(row=5, column=0, sticky="w")
+        self.compressor_var = tk.StringVar()
+        compressor_options = [
+            "Reciprocating compressor",
+            "Inverter rotary compressor",
+            "Fixed speed rotary compressor",
+            "Scroll compressor"
+        ]
+        self.compressor_cb = ttk.Combobox(master, textvariable=self.compressor_var, values=compressor_options, state="readonly", width=25)
+        self.compressor_cb.grid(row=5, column=1)
+
+        # next button
+        tk.Button(master, text="Next", command=self.next).grid(row=6, column=1, pady=10)
+
+    # Error handling 
+    def next(self):
+        try:
+            iseer = float(self.iseer_entry.get())
+            cooling_capacity = float(self.cooling_entry.get())
+
+            if not self.ac_type_var.get():
+                raise ValueError("Select AC type.")
+            if not self.tonnage_var.get():
+                raise ValueError("Select AC tonnage.")
+            if not self.service_var.get():
+                raise ValueError("Select last service.")
+            if not self.compressor_var.get():
+                raise ValueError("Select compressor type.")
+
+            # open next page
+            self.open_next_page()
+
+        except ValueError as ve:
+            messagebox.showerror("Input Error", str(ve))
+        except:
+            messagebox.showerror("Input Error", "ISEER and Cooling Capacity must be numbers.")
+
+    # ------------Next page inputs---------------
+
+    def open_next_page(self):
+        next_window = tk.Toplevel(self.master)
+        next_window.title("Room & Energy Details")
+        set_black_background(next_window)
+
+        tk.Label(next_window, text="Room Size (sq ft):").grid(row=3, column=0, sticky="w")
+        self.roomsize_entry = tk.Entry(next_window, width=28)
+        self.roomsize_entry.grid(row=3, column=1)
+
+        tk.Label(next_window, text="Number of People:").grid(row=0, column=0, sticky="w")
+        self.people_entry = tk.Entry(next_window, width=28)
+        self.people_entry.grid(row=0, column=1)
+
+        tk.Label(next_window, text="Other Source of Heat (Watt):").grid(row=1, column=0, sticky="w")
+        self.heat_entry = tk.Entry(next_window, width=28)
+        self.heat_entry.grid(row=1, column=1)
+
+        tk.Label(next_window, text="Energy limitation(units/kWh):").grid(row=2, column=0, sticky="w")
+        self.energy_entry = tk.Entry(next_window, width=28)
+        self.energy_entry.grid(row=2, column=1, padx=10)
+
+        # City for weather lookup
+        tk.Label(next_window, text="City (for weather):").grid(row=7, column=0, sticky="w")
+        self.city_entry = tk.Entry(next_window, width=28)
+        self.city_entry.grid(row=7, column=1)
+
+        tk.Label(next_window, text="Person Movement:").grid(row=4, column=0, sticky="w")
+        self.movement_var = tk.StringVar(value="0")  # empty so none selected by default
+        tk.Radiobutton(next_window, text="Yes", variable=self.movement_var, value="Yes").grid(row=4, column=1, sticky="w")
+        tk.Radiobutton(next_window, text="No", variable=self.movement_var, value="No").grid(row=4, column=2, sticky="w")
+
+        tk.Label(next_window, text="Timing (24hr format):").grid(row=5, column=0, sticky="w")
+        self.timing_entry = tk.Entry(next_window, width=28)
+        self.timing_entry.grid(row=5, column=1)
+
+        tk.Label(next_window, text="Position of Person (in clock e.g., 11o, 12o):").grid(row=6, column=0, sticky="w")
+        self.position_entry = tk.Entry(next_window, width=28)
+        self.position_entry.grid(row=6, column=1)
+
+        tk.Button(next_window, text="Submit", command=self.submit_next_page).grid(row=8, column=1, pady=10)
+
+    # Error handling
+    def submit_next_page(self):
+        try:
+            num_people = int(self.people_entry.get())
+            other_heat = float(self.heat_entry.get())
+            total_energy = float(self.energy_entry.get())
+            room_size = float(self.roomsize_entry.get())
+
+            movement = self.movement_var.get()
+            if not movement:
+                raise ValueError("Please select Yes or No for Person Movement.")
+
+            timing = self.timing_entry.get().strip()
+            position = self.position_entry.get().strip()
+            city = self.city_entry.get().strip()
+
+            # Basic format checks
+            if ":" not in timing or len(timing.split(":")) != 2:
+                raise ValueError("Timing must be in 24hr format, e.g., 13:30")
+
+            if not position.endswith("o"):
+                raise ValueError("Position should be in clock format like '11o'.")
+
+            # Store for your agent
+            print(f"Number of People: {num_people}")
+            print(f"Other Heat Source: {other_heat} W")
+            print(f"Total Energy You Can Afford: {total_energy} units")
+            print(f"Room Size: {room_size} sq ft")
+            print(f"Person Movement: {movement}")
+            print(f"Timing: {timing}")
+            print(f"Position: {position}")
+            print(f"City: {city}")
+
+            self.num_people = num_people
+            self.other_heat = other_heat
+            self.total_energy = total_energy
+            self.room_size = room_size
+            self.movement = movement
+            self.timing = timing
+            self.position = position
+            self.city = city
+
+
+        except ValueError as ve:
+            messagebox.showerror("Input Error", str(ve))
+            return
+        except Exception:
+            messagebox.showerror("Input Error", "Please enter valid data in all fields.")
+            return
+
+        # Build user_data dictionary for the agent
+        self.user_data = {
+            "ac_type": self.ac_type_var.get(),
+            "tonnage": self.tonnage_var.get(),
+            "iseer": float(self.iseer_entry.get()),
+            "cooling_capacity": float(self.cooling_entry.get()),
+            "service": self.service_var.get(),
+            "compressor": self.compressor_var.get(),
+            "room_size": float(self.roomsize_entry.get()),
+            "num_people": num_people,
+            "external_heat": other_heat,
+            "affordable_units": total_energy,
+            "movement": movement,
+            "timing": timing,
+            "position": position,
+            "compressor_options": self.compressor_var.get(),
+            "city": city,
+        }
+
+        # Run the agent
+        agent = ACReflexAgent(self.user_data)
+        result = agent.decide()
+        previous_data = agent.load_memory()[:-1]  # Exclude the just-added result if needed
+
+        # shows results in popup 
+        out_temp = result.get("Outdoor Temp")
+        out_hum = result.get("Outdoor Humidity")
+        cond = result.get("Weather Conditions") or ""
+        weather_lines = ""
+        if out_temp is not None and out_hum is not None:
+            weather_lines = f"\nOutdoor: {out_temp} °C, {out_hum}% {f'({cond})' if cond else ''}\n"
+
+        result_text = (
+            f"\nRoom Temp: {result['Room Temp']} °C\n"
+            f"Humidity: {result['Humidity']}%\n"
+            f"Suggested AC Temp: {result['Suggested AC Temp']} °C\n"
+            f"Mode: {result['Mode']}\n"
+            f"Fan Speed: {result['Fan Speed']}\n"
+            f"Flap Direction: {result['Flap Direction']}\n"
+            f"Estimated Units/day: {result['Estimated Units/day']} kWh"
+            f"{weather_lines}"
+        )
+        messagebox.showinfo("AC Reflex Agent Result", result_text)
+
+        # prepare previous data text
+        prev_text = ""
+        for entry in previous_data:
+            prev_text += f"INPUT: {entry['input']}\nOUTPUT: {entry['output']}\n\n"
+
+        # New popup output/result
+        new_text = (
+            f"\nRoom Temp: {result['Room Temp']} °C\n"
+            f"Humidity: {result['Humidity']}%\n"
+            f"Suggested AC Temp: {result['Suggested AC Temp']} °C\n"
+            f"Mode: {result['Mode']}\n"
+            f"Fan Speed: {result['Fan Speed']}\n"
+            f"Flap Direction: {result['Flap Direction']}\n"
+            f"Estimated Units/day: {result['Estimated Units/day']} kWh"
+            f"{weather_lines}"
+        )
+
+        # Creates a new window with 2 text areas side by side
+        split_window = tk.Toplevel(self.master)
+        split_window.title("Goal-Based Agent Comparison")
+        set_black_background(split_window)
+
+        left = tk.Text(split_window, width=60, height=30)
+        left.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        left.insert(tk.END, f"--- PREVIOUS DATA ---\n\n{prev_text}")
+
+        right = tk.Text(split_window, width=60, height=30)
+        right.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+        right.insert(tk.END, f"--- NEW OUTPUT ---\n\n{new_text}")
+
+
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    configure_dark_theme()  # Add this line
+    set_black_background(root)
+    app = SmartACInputTab(root)
+    root.mainloop()

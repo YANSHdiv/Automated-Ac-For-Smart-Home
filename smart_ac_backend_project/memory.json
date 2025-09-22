@@ -1,0 +1,200 @@
+[
+  {
+    "input": {
+      "room_temp": 42.3,
+      "humidity": 64.3,
+      "num_people": 22,
+      "movement": "Yes",
+      "timing": "3:23"
+    },
+    "output": {
+      "Room_Temp": 42.3,
+      "Humidity": 64.3,
+      "Suggested_AC_Temp": 21,
+      "Mode": "Eco Mode",
+      "Fan_Speed": "Low",
+      "Flap_Direction": "Middle",
+      "Estimated_Units_per_day": 27.05
+    }
+  },
+  {
+    "input": {
+      "room_temp": 43.8,
+      "humidity": 61.0,
+      "num_people": 22,
+      "movement": "Yes",
+      "timing": "3:23"
+    },
+    "output": {
+      "Room_Temp": 43.8,
+      "Humidity": 61.0,
+      "Suggested_AC_Temp": 21,
+      "Mode": "Eco Mode",
+      "Fan_Speed": "Low",
+      "Flap_Direction": "Middle",
+      "Estimated_Units_per_day": 27.05
+    }
+  },
+  {
+    "input": {
+      "room_temp": 38.7,
+      "humidity": 46.8,
+      "num_people": 22,
+      "movement": "Yes",
+      "timing": "3:23"
+    },
+    "output": {
+      "Room_Temp": 38.7,
+      "Humidity": 46.8,
+      "Suggested_AC_Temp": 21,
+      "Mode": "Eco Mode",
+      "Fan_Speed": "Low",
+      "Flap_Direction": "Middle",
+      "Estimated_Units_per_day": 27.05
+    }
+  },
+  {
+    "input": {
+      "room_temp": 42.8,
+      "humidity": 51.0,
+      "num_people": 22,
+      "movement": "Yes",
+      "timing": "3:23"
+    },
+    "output": {
+      "Room_Temp": 42.8,
+      "Humidity": 51.0,
+      "Suggested_AC_Temp": 21,
+      "Mode": "Eco Mode",
+      "Fan_Speed": "Low",
+      "Flap_Direction": "Middle",
+      "Estimated_Units_per_day": 27.05
+    }
+  },
+  {
+    "input": {
+      "room_temp": 41.1,
+      "humidity": 61.3,
+      "num_people": 22,
+      "movement": "Yes",
+      "timing": "3:23"
+    },
+    "output": {
+      "Room_Temp": 41.1,
+      "Humidity": 61.3,
+      "Suggested_AC_Temp": 21,
+      "Mode": "Eco Mode",
+      "Fan_Speed": "Low",
+      "Flap_Direction": "Middle",
+      "Estimated_Units_per_day": 27.05
+    }
+  },
+  {
+    "input": {
+      "room_temp": 43.9,
+      "humidity": 30.2,
+      "num_people": 22,
+      "movement": "Yes",
+      "timing": "3:23"
+    },
+    "output": {
+      "Room_Temp": 43.9,
+      "Humidity": 30.2,
+      "Suggested_AC_Temp": 21,
+      "Mode": "Eco Mode",
+      "Fan_Speed": "Low",
+      "Flap_Direction": "Middle",
+      "Estimated_Units_per_day": 27.05
+    }
+  },
+  {
+    "input": {
+      "room_temp": 34.2,
+      "humidity": 50.5,
+      "num_people": 22,
+      "movement": "Yes",
+      "timing": "3:23"
+    },
+    "output": {
+      "Room_Temp": 34.2,
+      "Humidity": 50.5,
+      "Suggested_AC_Temp": 23,
+      "Mode": "Eco Mode",
+      "Fan_Speed": "Low",
+      "Flap_Direction": "Middle",
+      "Estimated_Units_per_day": 27.05
+    }
+  },
+  {
+    "input": {
+      "room_temp": 25.2,
+      "humidity": 66.6,
+      "num_people": 22,
+      "movement": "Yes",
+      "timing": "3:23"
+    },
+    "output": {
+      "Room_Temp": 25.2,
+      "Humidity": 66.6,
+      "Suggested_AC_Temp": 27,
+      "Mode": "Eco Mode",
+      "Fan_Speed": "Low",
+      "Flap_Direction": "Middle",
+      "Estimated_Units_per_day": 27.05
+    }
+  },
+  {
+    "input": {
+      "room_temp": 24.4,
+      "humidity": 55.5,
+      "num_people": 22,
+      "movement": "Yes",
+      "timing": "3:23"
+    },
+    "output": {
+      "Room_Temp": 24.4,
+      "Humidity": 55.5,
+      "Suggested_AC_Temp": 27,
+      "Mode": "Eco Mode",
+      "Fan_Speed": "Low",
+      "Flap_Direction": "Middle",
+      "Estimated_Units_per_day": 27.05
+    }
+  },
+  {
+    "input": {
+      "room_temp": 41.2,
+      "humidity": 42.1,
+      "num_people": 22,
+      "movement": "Yes",
+      "timing": "3:23"
+    },
+    "output": {
+      "Room_Temp": 41.2,
+      "Humidity": 42.1,
+      "Suggested_AC_Temp": 21,
+      "Mode": "Eco Mode",
+      "Fan_Speed": "Low",
+      "Flap_Direction": "Middle",
+      "Estimated_Units_per_day": 27.05
+    }
+  },
+  {
+    "input": {
+      "room_temp": 41.5,
+      "humidity": 58.5,
+      "num_people": 2,
+      "movement": "Yes",
+      "timing": "3:09"
+    },
+    "output": {
+      "Room_Temp": 41.5,
+      "Humidity": 58.5,
+      "Suggested_AC_Temp": 21,
+      "Mode": "Eco Mode",
+      "Fan_Speed": "Low",
+      "Flap_Direction": "Middle",
+      "Estimated_Units_per_day": 14.6
+    }
+  }
+]
